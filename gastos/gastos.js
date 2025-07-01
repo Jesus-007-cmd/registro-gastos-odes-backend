@@ -148,9 +148,15 @@ router.get('/download/:id/:fileName', async (req, res) => {
 });
 
 // 📦 Listar gastos completos (datos + archivos)
+// Al final de gastos/gastos.js, antes de module.exports
+
+/**
+ * GET /gastos/full
+ * Devuelve array de { datos: { odeSId,… }, files: [<nombres>] }
+ */
 router.get('/full', async (req, res) => {
   try {
-    // 1) Lista todos los objetos en S3
+    // 1) Lista todos los objetos en S3 con prefijo control-gastos/
     const list = await s3.listObjectsV2({
       Bucket: 'registro-clientes-docs',
       Prefix: 'control-gastos/',
@@ -158,39 +164,54 @@ router.get('/full', async (req, res) => {
     const contents = list.Contents || [];
 
     // 2) Filtra solo los JSON de datos
-    const jsonFiles = contents.filter(obj => obj.Key && obj.Key.endsWith('_datos.json'));
+    const jsonFiles = contents.filter(item =>
+      item.Key && item.Key.endsWith('_datos.json')
+    );
 
     const resultados = [];
+
+    // 3) Para cada JSON de datos:
     for (const jf of jsonFiles) {
       const keyDatos = jf.Key;
       if (!keyDatos) continue;
 
       // extrae el odeSId de "control-gastos/{odeSId}_datos.json"
-      const parts    = keyDatos.split('/');
-      const fileName = parts[parts.length - 1]; // "{odeSId}_datos.json"
-      const odeSId   = fileName.replace('_datos.json','');
+      const parts = keyDatos.split('/');
+      const fileName = parts[parts.length - 1];           // "{odeSId}_datos.json"
+      const odeSId = fileName.replace('_datos.json', ''); // "123"
 
-      // descarga y parsea datos
-      const obj = await s3.getObject({ Bucket: 'registro-clientes-docs', Key: keyDatos }).promise();
-      const datos = obj.Body ? JSON.parse(obj.Body.toString('utf-8')) : {};
+      // descarga y parsea el JSON
+      const objData = await s3.getObject({
+        Bucket: 'registro-clientes-docs',
+        Key: keyDatos,
+      }).promise();
+      const datos = objData.Body
+        ? JSON.parse(objData.Body.toString('utf-8'))
+        : {};
 
-      // lista archivos asociados
+      // lista todos los archivos que empiecen con ese ID
       const filesList = contents
-        .filter(o => o.Key && o.Key.startsWith(`control-gastos/${odeSId}_`))
+        .filter(o => 
+          o.Key &&
+          o.Key.startsWith(`control-gastos/${odeSId}_`) &&
+          !o.Key.endsWith('_datos.json')
+        )
         .map(o => {
-          const k = o.Key || '';
-          const segs = k.split('/');
+          // coge solo la parte tras la última '/'
+          const segs = o.Key.split('/');
           return segs[segs.length - 1];
-        })
-        .filter(n => n && !n.endsWith('_datos.json'));
+        });
 
       resultados.push({ datos, files: filesList });
     }
 
-    res.json({ gastos: resultados });
+    return res.json({ gastos: resultados });
   } catch (err) {
     console.error('❌ Error en GET /gastos/full:', err);
-    res.status(500).json({ error: 'Error al listar gastos completos', details: err.message });
+    return res.status(500).json({
+      error: 'Error al listar gastos completos',
+      details: err.message || err
+    });
   }
 });
 
