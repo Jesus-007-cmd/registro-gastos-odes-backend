@@ -159,6 +159,65 @@ También puedes agrupar por proveedor, banco o mes, usando filtros locales en lo
 
 ---
 
+
+## 🚀 Despliegue en Railway
+
+Este backend ha sido desplegado exitosamente en [Railway](https://railway.app/), una plataforma de infraestructura como servicio (PaaS).
+
+**🔗 URL pública de producción:**
+
+```
+https://registro-gastos-odes-backend-production.up.railway.app/
+```
+
+**📂 Rama conectada:**
+
+```
+main
+```
+
+**🔧 Configuración clave:**
+
+- Puerto expuesto: `8080` (`process.env.PORT || 8080`)
+- Builder: `Nixpacks`
+- Lenguaje: `Node.js`
+- RAM: `1 GB` | vCPU: `2`
+- Auto-deploy: activado al hacer push a `main`
+- Networking: público y privado habilitados
+
+**📄 Archivos involucrados:**
+
+- `index.js` – Archivo principal donde se monta Express y las rutas.
+- `.env` – Define variables de entorno como `PORT`, conexión a DB, etc.
+- `package.json` – Contiene scripts, dependencias y `start` command.
+
+**🛠 Pasos realizados para desplegar:**
+
+1. Repositorio conectado desde GitHub: `Jesus-007-cmd/registro-gastos-odes-backend`
+2. Rama `main` enlazada a producción.
+3. Se configuró el puerto `8080` en el archivo `index.js`:
+   ```js
+   const PORT = process.env.PORT || 8080;
+   app.listen(PORT, () => {
+     console.log(`Escuchando en puerto ${PORT}`);
+   });
+   ```
+4. Push desde terminal de VSCode:
+   ```bash
+   git add .
+   git commit -m "set port 8080"
+   git push origin main
+   ```
+5. Railway detectó el cambio y desplegó automáticamente.
+6. Verificado el endpoint funcionando: `https://registro-gastos-odes-backend-production.up.railway.app/gastos` devuelve:
+   ```json
+   {"gastos":[]}
+   ```
+
+
+
 ## ✍ Autor
 
 Desarrollado por **Jesús Antonio Gutiérrez** para sistemas internos empresariales.
+
+
