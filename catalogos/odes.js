@@ -78,6 +78,41 @@ router.put('/:id', express.json(), async (req, res) => {
     res.status(500).json({ error: '❌ Error al actualizar OdeS', details: err });
   }
 });
+// ✅ Marcar OdeS como cobrada
+router.put('/:id/cobrar', async (req, res) => {
+  const odeSId = req.params.id;
+
+  try {
+    // 1. Leer el catálogo actual
+    const data = await s3.getObject({ Bucket: BUCKET, Key: KEY }).promise();
+    const odes = JSON.parse(data.Body.toString('utf-8'));
+
+    // 2. Encontrar la OdeS
+    const index = odes.findIndex(o => o.id === odeSId);
+    if (index === -1) {
+      return res.status(404).json({ error: 'OdeS no encontrada' });
+    }
+
+    // 3. Marcarla como cobrada
+    odes[index].cobrada = true;
+    odes[index].fechaCobro = new Date().toISOString();
+
+    // 4. Persistir el cambio en S3
+    await s3.putObject({
+      Bucket: BUCKET,
+      Key: KEY,
+      Body: Buffer.from(JSON.stringify(odes, null, 2)),
+    }).promise();
+
+    res.json({ message: '✅ OdeS marcada como cobrada', odeS: odes[index] });
+
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ error: '❌ Error al marcar OdeS como cobrada', details: err });
+  }
+});
 
 // ✅ Eliminar OdeS
 router.delete('/:id', async (req, res) => {
