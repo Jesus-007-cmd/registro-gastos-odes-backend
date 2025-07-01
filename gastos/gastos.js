@@ -106,5 +106,47 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ error: 'Error al listar los gastos', details: err.message });
   }
 });
+// gastos/gastos.js
+// ——— después de los imports, Multer y tus rutas actuales ———
+
+// 1) Listar los archivos de un gasto concreto (sin incluir el JSON de datos)
+router.get('/:id/files', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const list = await s3.listObjectsV2({
+      Bucket: 'registro-clientes-docs',
+      Prefix: `control-gastos/${id}_`
+    }).promise();
+
+    // Filtramos el JSON de datos y devolvemos sólo los nombres de archivo
+    const files = (list.Contents||[])
+      .map(obj => obj.Key!.split('/').pop()!)
+      .filter(name => !name.endsWith('_datos.json'));
+
+    res.json({ files });
+  } catch (err) {
+    console.error('Error listando archivos:', err);
+    res.status(500).json({ error: 'Error listando archivos', details: err.message });
+  }
+});
+
+// 2) Generar URL pre-firmada para descargar un archivo
+router.get('/download/:id/:fileName', async (req, res) => {
+  const { id, fileName } = req.params;
+  const key = `control-gastos/${id}_${fileName}`;
+  try {
+    const url = s3.getSignedUrl('getObject', {
+      Bucket: 'registro-clientes-docs',
+      Key: key,
+      Expires: 60 * 5, // válida 5 minutos
+    });
+    res.json({ url });
+  } catch (err) {
+    console.error('Error generando URL de descarga:', err);
+    res.status(500).json({ error: 'Error generando URL de descarga', details: err.message });
+  }
+});
+
+module.exports = router;
 
 module.exports = router;
