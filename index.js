@@ -18,7 +18,8 @@ app.use('/odes', odesRoutes);                // CRUD OdeS
 app.use('/proveedores', proveedoresRoutes);  // CRUD proveedores
 
 // Puerto
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
-  console.log(`🚀 Backend de Control de Gastos escuchando en http://localhost:${PORT}`);
+  console.log(`Escuchando en puerto ${PORT}`);
 });
