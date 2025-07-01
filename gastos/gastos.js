@@ -3,9 +3,9 @@ const express = require('express');
 const multer = require('multer');
 const AWS = require('aws-sdk');
 const cors = require('cors');
-const app = express();
 
-app.use(cors());
+const router = express.Router();
+router.use(cors());
 
 const s3 = new AWS.S3({
   accessKeyId: process.env.AWS_KEY,
@@ -16,7 +16,8 @@ const s3 = new AWS.S3({
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-app.post('/gastos/upload', upload.fields([
+// 📤 Subir gasto
+router.post('/upload', upload.fields([
   { name: 'factura' },
   { name: 'comprobante' },
   { name: 'evidencia' }
@@ -26,23 +27,20 @@ app.post('/gastos/upload', upload.fields([
     const odeSId = formData.odeSId || 'sin_odeS';
     
     const jsonBuffer = Buffer.from(JSON.stringify(formData, null, 2));
-    const jsonParams = {
+    await s3.upload({
       Bucket: 'registro-clientes-docs',
       Key: `control-gastos/${odeSId}_datos.json`,
       Body: jsonBuffer,
       ContentType: 'application/json',
-    };
-    await s3.upload(jsonParams).promise();
+    }).promise();
 
-    const fileFields = req.files;
-    for (const [fieldName, files] of Object.entries(fileFields)) {
+    for (const [fieldName, files] of Object.entries(req.files)) {
       for (const file of files) {
-        const fileParams = {
+        await s3.upload({
           Bucket: 'registro-clientes-docs',
           Key: `control-gastos/${odeSId}_${fieldName}_${file.originalname}`,
           Body: file.buffer,
-        };
-        await s3.upload(fileParams).promise();
+        }).promise();
       }
     }
 
@@ -53,27 +51,23 @@ app.post('/gastos/upload', upload.fields([
   }
 });
 
-//Lectura del archivo .json de una OdeS:
-app.get('/gastos/:id', async (req, res) => {
-  const odeSId = req.params.id;
-
+// 📄 Leer gasto individual
+router.get('/:id', async (req, res) => {
   try {
     const data = await s3.getObject({
       Bucket: 'registro-clientes-docs',
-      Key: `control-gastos/${odeSId}_datos.json`,
+      Key: `control-gastos/${req.params.id}_datos.json`,
     }).promise();
 
-    const jsonContent = JSON.parse(data.Body.toString('utf-8'));
-    res.json(jsonContent);
+    res.json(JSON.parse(data.Body.toString('utf-8')));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: '❌ Error al leer el gasto', details: err });
   }
 });
 
-
-//. 📋 Listar todos los gastos registrados
-app.get('/gastos', async (req, res) => {
+// 📋 Listar todos los gastos
+router.get('/', async (req, res) => {
   try {
     const data = await s3.listObjectsV2({
       Bucket: 'registro-clientes-docs',
@@ -81,7 +75,6 @@ app.get('/gastos', async (req, res) => {
     }).promise();
 
     const jsonFiles = data.Contents.filter(item => item.Key.endsWith('_datos.json'));
-
     const gastos = [];
 
     for (const file of jsonFiles) {
@@ -99,4 +92,4 @@ app.get('/gastos', async (req, res) => {
   }
 });
 
-app.listen(4000, () => console.log('🚀 Backend escuchando en http://localhost:4000'));
+module.exports = router;

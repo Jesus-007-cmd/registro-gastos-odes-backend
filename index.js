@@ -1,21 +1,24 @@
-require('dotenv').config();                         // ✅ Correcto: carga variables de entorno
-const express = require('express');                 // ✅ Importa express
-const cors = require('cors');                       // ✅ Habilita CORS
-const app = express();                              // ✅ Inicializa express
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
 
-app.use(cors());                                    // ✅ CORS activado
-app.use(express.json());                            // ✅ Permite recibir JSON
+const app = express();
+app.use(cors());
 
-// 👉 Rutas del sistema de control de gastos por OdeS
-app.use('/gastos', require('./gastos/gastos'));     // ✅ Importa módulo de gastos correctamente
+// Importar rutas
+const gastosRoutes = require('./gastos/gastos');
+const bancosRoutes = require('./catalogos/bancos');
+const odesRoutes = require('./catalogos/odes');
+const proveedoresRoutes = require('./catalogos/proveedores');
 
-// 👉 Catálogos
-app.use('/catalogo/bancos', require('./catalogos/bancos'));         // ✅
-app.use('/catalogo/proveedores', require('./catalogos/proveedores'));// ✅
-app.use('/catalogo/odes', require('./catalogos/odes'));             // ✅
+// Montar rutas
+app.use('/gastos', gastosRoutes);            // POST /gastos/upload, GET /gastos, GET /gastos/:id
+app.use('/bancos', bancosRoutes);            // CRUD bancos
+app.use('/odes', odesRoutes);                // CRUD OdeS
+app.use('/proveedores', proveedoresRoutes);  // CRUD proveedores
 
 // Puerto
-const port = process.env.PORT || 4000;
-app.listen(port, () => {
-  console.log(`🚀 Backend de Control de Gastos escuchando en http://localhost:${port}`);
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`🚀 Backend de Control de Gastos escuchando en http://localhost:${PORT}`);
 });
