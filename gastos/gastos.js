@@ -64,7 +64,73 @@ router.post(
     }
   }
 );
+// 📦 Listar gastos completos (datos + archivos)
+// Al final de gastos/gastos.js, antes de module.exports
 
+/**
+ * GET /gastos/full
+ * Devuelve array de { datos: { odeSId,… }, files: [<nombres>] }
+ */
+router.get('/full', async (req, res) => {
+  try {
+    // 1) Lista todos los objetos en S3 con prefijo control-gastos/
+    const list = await s3.listObjectsV2({
+      Bucket: 'registro-clientes-docs',
+      Prefix: 'control-gastos/',
+    }).promise();
+    const contents = list.Contents || [];
+
+    // 2) Filtra solo los JSON de datos
+    const jsonFiles = contents.filter(item =>
+      item.Key && item.Key.endsWith('_datos.json')
+    );
+
+    const resultados = [];
+
+    // 3) Para cada JSON de datos:
+    for (const jf of jsonFiles) {
+      const keyDatos = jf.Key;
+      if (!keyDatos) continue;
+
+      // extrae el odeSId de "control-gastos/{odeSId}_datos.json"
+      const parts = keyDatos.split('/');
+      const fileName = parts[parts.length - 1];           // "{odeSId}_datos.json"
+      const odeSId = fileName.replace('_datos.json', ''); // "123"
+
+      // descarga y parsea el JSON
+      const objData = await s3.getObject({
+        Bucket: 'registro-clientes-docs',
+        Key: keyDatos,
+      }).promise();
+      const datos = objData.Body
+        ? JSON.parse(objData.Body.toString('utf-8'))
+        : {};
+
+      // lista todos los archivos que empiecen con ese ID
+      const filesList = contents
+        .filter(o => 
+          o.Key &&
+          o.Key.startsWith(`control-gastos/${odeSId}_`) &&
+          !o.Key.endsWith('_datos.json')
+        )
+        .map(o => {
+          // coge solo la parte tras la última '/'
+          const segs = o.Key.split('/');
+          return segs[segs.length - 1];
+        });
+
+      resultados.push({ datos, files: filesList });
+    }
+
+    return res.json({ gastos: resultados });
+  } catch (err) {
+    console.error('❌ Error en GET /gastos/full:', err);
+    return res.status(500).json({
+      error: 'Error al listar gastos completos',
+      details: err.message || err
+    });
+  }
+});
 // 📄 Leer gasto individual
 router.get('/:id', async (req, res) => {
   try {
@@ -147,72 +213,6 @@ router.get('/download/:id/:fileName', async (req, res) => {
   }
 });
 
-// 📦 Listar gastos completos (datos + archivos)
-// Al final de gastos/gastos.js, antes de module.exports
 
-/**
- * GET /gastos/full
- * Devuelve array de { datos: { odeSId,… }, files: [<nombres>] }
- */
-router.get('/full', async (req, res) => {
-  try {
-    // 1) Lista todos los objetos en S3 con prefijo control-gastos/
-    const list = await s3.listObjectsV2({
-      Bucket: 'registro-clientes-docs',
-      Prefix: 'control-gastos/',
-    }).promise();
-    const contents = list.Contents || [];
-
-    // 2) Filtra solo los JSON de datos
-    const jsonFiles = contents.filter(item =>
-      item.Key && item.Key.endsWith('_datos.json')
-    );
-
-    const resultados = [];
-
-    // 3) Para cada JSON de datos:
-    for (const jf of jsonFiles) {
-      const keyDatos = jf.Key;
-      if (!keyDatos) continue;
-
-      // extrae el odeSId de "control-gastos/{odeSId}_datos.json"
-      const parts = keyDatos.split('/');
-      const fileName = parts[parts.length - 1];           // "{odeSId}_datos.json"
-      const odeSId = fileName.replace('_datos.json', ''); // "123"
-
-      // descarga y parsea el JSON
-      const objData = await s3.getObject({
-        Bucket: 'registro-clientes-docs',
-        Key: keyDatos,
-      }).promise();
-      const datos = objData.Body
-        ? JSON.parse(objData.Body.toString('utf-8'))
-        : {};
-
-      // lista todos los archivos que empiecen con ese ID
-      const filesList = contents
-        .filter(o => 
-          o.Key &&
-          o.Key.startsWith(`control-gastos/${odeSId}_`) &&
-          !o.Key.endsWith('_datos.json')
-        )
-        .map(o => {
-          // coge solo la parte tras la última '/'
-          const segs = o.Key.split('/');
-          return segs[segs.length - 1];
-        });
-
-      resultados.push({ datos, files: filesList });
-    }
-
-    return res.json({ gastos: resultados });
-  } catch (err) {
-    console.error('❌ Error en GET /gastos/full:', err);
-    return res.status(500).json({
-      error: 'Error al listar gastos completos',
-      details: err.message || err
-    });
-  }
-});
 
 module.exports = router;
