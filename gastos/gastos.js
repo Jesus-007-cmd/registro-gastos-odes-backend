@@ -1,23 +1,22 @@
 // gastos/gastos.js
 require('dotenv').config();
-const express = require('express');
-const multer = require('multer');
-const AWS = require('aws-sdk');
-const cors = require('cors');
+const express  = require('express');
+const multer   = require('multer');
+const AWS      = require('aws-sdk');
+const cors     = require('cors');
 
 const router = express.Router();
 router.use(cors());
 
 // ——— Configuración de S3 ———
 const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_KEY,
+  accessKeyId:     process.env.AWS_KEY,
   secretAccessKey: process.env.AWS_SECRET,
-  region: 'us-east-2',
+  region:          'us-east-2',
 });
 
 // ——— Multer en memoria ———
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 // 📤 Subir gasto (datos + archivos) a S3
 router.post(
@@ -34,24 +33,26 @@ router.post(
 
     try {
       const formData = req.body;
-      const odeSId = formData.odeSId || 'sin_odeS';
+      const odeSId    = formData.odeSId || 'sin_odeS';
 
       // 1) Guardar JSON con los datos del formulario
       const jsonBuffer = Buffer.from(JSON.stringify(formData, null, 2));
       await s3.upload({
         Bucket: 'registro-clientes-docs',
-        Key: `control-gastos/${odeSId}_datos.json`,
-        Body: jsonBuffer,
+        Key:    `control-gastos/${odeSId}_datos.json`,
+        Body:   jsonBuffer,
         ContentType: 'application/json',
       }).promise();
 
       // 2) Guardar cada archivo (factura, comprobante, evidencia)
-      for (const [fieldName, files] of Object.entries(req.files || {})) {
+      const filesObj = req.files || {};
+      for (const fieldName of Object.keys(filesObj)) {
+        const files = filesObj[fieldName] || [];
         for (const file of files) {
           await s3.upload({
             Bucket: 'registro-clientes-docs',
-            Key: `control-gastos/${odeSId}_${fieldName}_${file.originalname}`,
-            Body: file.buffer,
+            Key:    `control-gastos/${odeSId}_${fieldName}_${file.originalname}`,
+            Body:   file.buffer,
           }).promise();
         }
       }
@@ -67,35 +68,33 @@ router.post(
 // 📄 Leer gasto individual
 router.get('/:id', async (req, res) => {
   try {
-    const data = await s3.getObject({
-      Bucket: 'registro-clientes-docs',
-      Key: `control-gastos/${req.params.id}_datos.json`,
-    }).promise();
-
-    res.json(JSON.parse(data.Body.toString('utf-8')));
+    const key = `control-gastos/${req.params.id}_datos.json`;
+    const data = await s3.getObject({ Bucket: 'registro-clientes-docs', Key: key }).promise();
+    const json = data.Body ? JSON.parse(data.Body.toString('utf-8')) : {};
+    res.json(json);
   } catch (err) {
     console.error('❌ Error en GET /gastos/:id:', err);
     res.status(500).json({ error: 'Error al leer el gasto', details: err.message });
   }
 });
 
-// 📋 Listar todos los gastos
+// 📋 Listar todos los gastos (solo datos)
 router.get('/', async (req, res) => {
   try {
-    const data = await s3.listObjectsV2({
+    const list = await s3.listObjectsV2({
       Bucket: 'registro-clientes-docs',
       Prefix: 'control-gastos/',
     }).promise();
 
-    const jsonFiles = (data.Contents || []).filter(item => item.Key && item.Key.endsWith('_datos.json'));
+    const contents = list.Contents || [];
+    const jsonFiles = contents.filter(item => item.Key && item.Key.endsWith('_datos.json'));
     const gastos = [];
 
     for (const file of jsonFiles) {
-      const obj = await s3.getObject({
-        Bucket: 'registro-clientes-docs',
-        Key: file.Key,
-      }).promise();
-      gastos.push(JSON.parse(obj.Body.toString('utf-8')));
+      const data = await s3.getObject({ Bucket: 'registro-clientes-docs', Key: file.Key }).promise();
+      if (data.Body) {
+        gastos.push(JSON.parse(data.Body.toString('utf-8')));
+      }
     }
 
     res.json({ gastos });
@@ -114,10 +113,13 @@ router.get('/:id/files', async (req, res) => {
       Prefix: `control-gastos/${id}_`
     }).promise();
 
-    const files = (list.Contents || [])
+    const contents = list.Contents || [];
+    const files = contents
       .map(obj => {
-        // si obj.Key existe, tomamos la última parte tras '/'
-        return obj.Key ? obj.Key.split('/').pop() : null;
+        if (!obj.Key) return null;
+        const parts = obj.Key.split('/');
+        const name  = parts.length ? parts[parts.length - 1] : null;
+        return name;
       })
       .filter(name => name && !name.endsWith('_datos.json'));
 
@@ -135,13 +137,60 @@ router.get('/download/:id/:fileName', async (req, res) => {
   try {
     const url = s3.getSignedUrl('getObject', {
       Bucket: 'registro-clientes-docs',
-      Key: key,
+      Key:    key,
       Expires: 300, // 5 minutos
     });
     res.json({ url });
   } catch (err) {
     console.error('❌ Error generando URL de descarga:', err);
     res.status(500).json({ error: 'Error generando URL de descarga', details: err.message });
+  }
+});
+
+// 📦 Listar gastos completos (datos + archivos)
+router.get('/full', async (req, res) => {
+  try {
+    // 1) Lista todos los objetos en S3
+    const list = await s3.listObjectsV2({
+      Bucket: 'registro-clientes-docs',
+      Prefix: 'control-gastos/',
+    }).promise();
+    const contents = list.Contents || [];
+
+    // 2) Filtra solo los JSON de datos
+    const jsonFiles = contents.filter(obj => obj.Key && obj.Key.endsWith('_datos.json'));
+
+    const resultados = [];
+    for (const jf of jsonFiles) {
+      const keyDatos = jf.Key;
+      if (!keyDatos) continue;
+
+      // extrae el odeSId de "control-gastos/{odeSId}_datos.json"
+      const parts    = keyDatos.split('/');
+      const fileName = parts[parts.length - 1]; // "{odeSId}_datos.json"
+      const odeSId   = fileName.replace('_datos.json','');
+
+      // descarga y parsea datos
+      const obj = await s3.getObject({ Bucket: 'registro-clientes-docs', Key: keyDatos }).promise();
+      const datos = obj.Body ? JSON.parse(obj.Body.toString('utf-8')) : {};
+
+      // lista archivos asociados
+      const filesList = contents
+        .filter(o => o.Key && o.Key.startsWith(`control-gastos/${odeSId}_`))
+        .map(o => {
+          const k = o.Key || '';
+          const segs = k.split('/');
+          return segs[segs.length - 1];
+        })
+        .filter(n => n && !n.endsWith('_datos.json'));
+
+      resultados.push({ datos, files: filesList });
+    }
+
+    res.json({ gastos: resultados });
+  } catch (err) {
+    console.error('❌ Error en GET /gastos/full:', err);
+    res.status(500).json({ error: 'Error al listar gastos completos', details: err.message });
   }
 });
 
